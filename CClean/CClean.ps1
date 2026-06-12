@@ -6,13 +6,20 @@
 
 # 保存为 UTF-8 BOM, 避免中文乱码
 # 日志文件路径 (记录运行时错误, 方便排查闪退问题)
-$Global:LogFile = Join-Path $env:TEMP ('CClean_' + [DateTime]::Now.ToString('yyyyMMdd_HHmmss') + '.log')
+$Global:LogFile = Join-Path $PSScriptRoot ('CClean_' + [DateTime]::Now.ToString('yyyyMMdd_HHmmss') + '.log')
 
 function Write-Log {
     param([string]$Msg)
     try {
         $line = "[$(Get-Date -Format 'HH:mm:ss')] $Msg"
         [System.IO.File]::AppendAllText($Global:LogFile, $line + "`n")
+
+        # 日志轮转: 保留最近 10 个日志文件，删除更早的
+        $logFiles = Get-ChildItem -Path $PSScriptRoot -Filter 'CClean_*.log' -File |
+                    Sort-Object Name -Descending | Select-Object -Skip 10 -ExpandProperty FullName
+        foreach ($old in $logFiles) {
+            try { Remove-Item -LiteralPath $old -Force -ErrorAction Stop } catch {}
+        }
     } catch {}
 }
 
@@ -486,7 +493,27 @@ $Global:UIItems  = New-Object System.Collections.ObjectModel.ObservableCollectio
 $ItemList.ItemsSource = $Global:UIItems
 
 # ---------- UI 辅助 ----------
-function Set-Status { param([string]$Text) $null = $window.Dispatcher.BeginInvoke([action][string]{ $args[0]; $StatusText.Text = $args[0] }, $Text, [Windows.Threading.DispatcherPriority]::Background) }
+function Set-Status {
+    param([string]$Text)
+    # 容错: $window 为 $null 时直接写入日志，避免提前调用导致闪退
+    if ($null -eq $window -or $null -eq $StatusText) {
+        Write-Log "Set-Status (窗口未就绪): $Text"
+        return
+    }
+    try {
+        # 使用 ScriptBlock 方式，参数通过闭包传递，避免委托参数不匹配
+        $null = $window.Dispatcher.BeginInvoke(
+            [Windows.Threading.DispatcherPriority]::Background,
+            [action]{
+                param($t)
+                if ($null -ne $StatusText) { $StatusText.Text = $t }
+            },
+            $Text
+        )
+    } catch {
+        Write-Log "Set-Status 异常: $($_.Exception.Message)"
+    }
+}
 
 function Update-DiskInfo {
     try {
@@ -629,7 +656,8 @@ function Invoke-Clean {
         $sc = $Global:ScanData[$sel.Key]
         Set-Status "正在清理: $($sc.Name) ... ($idx/$total)"
         $ProgBar.Value = [math]::Round($idx / $total * 100)
-        $null = $window.Dispatcher.BeginInvoke([action]{}, [Windows.Threading.DispatcherPriority]::Background)
+        # 触发UI消息泵，让界面刷新
+        $null = $window.Dispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background, [action]{})
 
         try {
             switch ($sc.Mode) {
@@ -706,7 +734,8 @@ function Invoke-BigFolder {
     $Global:Busy = $true
     $BtnBigFolder.IsEnabled = $false
     Set-Status "正在扫描 C盘 大文件夹 Top10 (可能需要一些时间)..."
-    $null = $window.Dispatcher.BeginInvoke([action]{}, [Windows.Threading.DispatcherPriority]::Background)
+    # 触发UI消息泵，让界面刷新
+    $null = $window.Dispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background, [action]{})
     try {
         $top = Scan-BigFolders
         $msg = "C盘占用空间最大的文件夹 Top10:`n`n"
@@ -755,7 +784,7 @@ $window.Add_ContentRendered({
                 Invoke-Scan
             } catch {
                 Write-Log "自动扫描异常: $($_.Exception.Message)"
-                Set-Status "扫描出错: $($_.Exception.Message) (可在 %TEMP% 查看日志)"
+                Set-Status "扫描出错: $($_.Exception.Message) (日志见: $Global:LogFile)"
             }
         })
 })

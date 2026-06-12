@@ -29,6 +29,7 @@ if "%errorLevel%"=="0" (
 )
 
 :run
+del /f /q %TEMP%\CClean_*.log 2>nul
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File "%PS_SCRIPT%"
 set "RC=%errorLevel%"
 
@@ -36,7 +37,7 @@ if "%RC%" neq "0" (
     echo.
     echo [INFO] Program exited with code: %RC%
     echo If the window did not appear, try these steps:
-    echo   1. Check %TEMP% for CClean_*.log for error details
+    echo   1. Check %~dp0 for CClean_*.log for error details
     echo   2. Make sure this folder is not blocked by antivirus
     echo   3. Right-click and select "Run as administrator"
     echo.
