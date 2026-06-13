@@ -1,0 +1,85 @@
+[13:12:13] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:13] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:14] 后台任务 biglogs 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:14] 后台任务 browser 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:14] 后台任务 residual 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:14] 后台任务 winupdate 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:14] 后台任务 recyclebin 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:14] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:38] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:38] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:38] 后台任务 biglogs 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:38] 后台任务 browser 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:38] 后台任务 residual 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:38] 后台任务 winupdate 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:38] 后台任务 recyclebin 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:38] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:57] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:57] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:12:57] 后台任务 biglogs 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:57] 后台任务 browser 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:57] 后台任务 residual 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:57] 后台任务 winupdate 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:57] 后台任务 recyclebin 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:12:57] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:13:28] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:13:28] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:13:29] 后台任务 biglogs 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:13:29] 后台任务 browser 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:13:29] 后台任务 residual 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:13:29] 后台任务 winupdate 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:13:29] 后台任务 recyclebin 取结果失败: Exception calling "EndInvoke" with "1" argument(s): "The pipeline was not run because a pipeline is already running. Pipelines cannot be run concurrently."
+[13:13:29] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:13:30] UI未捕获异常: Parameter count mismatch.
+   at System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   at System.Delegate.DynamicInvokeImpl(Object[] args)
+   at System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   at System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)

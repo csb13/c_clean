@@ -283,6 +283,212 @@ function Scan-BigFolders {
 }
 
 # ============================================================
+#  后台引擎 — Runspace + DispatcherTimer 轮询
+#  所有扫描在后台 Runspace 中执行，不阻塞 UI 线程
+# ============================================================
+
+# initScript：预加载到每个后台 Runspace 的扫描函数和数据
+# （与主脚本同步，每个任务运行时创建独立的 Runspace，避免并发冲突）
+$initScript = @'
+$Global:SafeRoots = @(
+    $env:TEMP,
+    "$env:SystemRoot\Temp",
+    "$env:SystemRoot\Prefetch",
+    "$env:SystemRoot\SoftwareDistribution\Download",
+    "$env:LOCALAPPDATA",
+    "$env:APPDATA",
+    "$env:USERPROFILE",
+    "C:\Users"
+) | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\').ToLower() }
+
+$Global:ProtectedPaths = @(
+    "$env:SystemRoot\System32",
+    "$env:SystemRoot\SysWOW64",
+    "$env:SystemRoot\WinSxS",
+    "$env:SystemRoot\Fonts",
+    "$env:SystemRoot\assembly",
+    "$env:ProgramFiles",
+    "${env:ProgramFiles(x86)}",
+    "C:\ProgramData\Microsoft\Windows\Start Menu"
+) | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\').ToLower() }
+
+$Global:ResidualTargets = @(
+    @{ Name='360安全卫士残留';   Roots=@("$env:APPDATA\360safe", "$env:LOCALAPPDATA\360safe", "$env:ProgramData\360safe") }
+    @{ Name='360浏览器残留';     Roots=@("$env:APPDATA\360se6", "$env:LOCALAPPDATA\360Chrome", "$env:APPDATA\360se") }
+    @{ Name='钉钉(DingTalk)旧版'; Roots=@("$env:APPDATA\DingTalk", "$env:LOCALAPPDATA\DingTalk") }
+    @{ Name='企业微信残留';      Roots=@("$env:APPDATA\Tencent\WXWork") }
+    @{ Name='各类Updater残留';   Roots=@("$env:LOCALAPPDATA\Updater", "$env:LOCALAPPDATA\Update") }
+    @{ Name='搜狗输入法残留';    Roots=@("$env:APPDATA\SogouInput", "$env:LOCALAPPDATA\SogouInput") }
+    @{ Name='WPS旧版缓存';       Roots=@("$env:LOCALAPPDATA\Kingsoft\WPS\addons", "$env:APPDATA\kingsoft\office6\backup") }
+    @{ Name='迅雷残留';          Roots=@("$env:APPDATA\Thunder Network", "$env:LOCALAPPDATA\Thunder Network") }
+    @{ Name='百度网盘缓存残留';  Roots=@("$env:APPDATA\baidu\BaiduNetdisk", "$env:LOCALAPPDATA\baidu") }
+)
+
+function Format-Size {
+    param([double]$Bytes)
+    if ($Bytes -ge 1GB) { return ('{0:N2} GB' -f ($Bytes / 1GB)) }
+    if ($Bytes -ge 1MB) { return ('{0:N2} MB' -f ($Bytes / 1MB)) }
+    if ($Bytes -ge 1KB) { return ('{0:N2} KB' -f ($Bytes / 1KB)) }
+    return ('{0} B' -f [int]$Bytes)
+}
+
+function Get-FolderSize {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return 0 }
+    try {
+        $sum = (Get-ChildItem -LiteralPath $Path -Recurse -Force -File -ErrorAction SilentlyContinue |
+                Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+        if ($null -eq $sum) { return 0 }
+        return [double]$sum
+    } catch { return 0 }
+}
+
+function Test-Protected {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $true }
+    $p = $Path.TrimEnd('\').ToLower()
+    foreach ($prot in $Global:ProtectedPaths) {
+        if ($p -eq $prot -or $p.StartsWith($prot + '\')) { return $true }
+    }
+    return $false
+}
+
+function Get-RunningProcessDirs {
+    $dirs = New-Object System.Collections.Generic.HashSet[string]
+    try {
+        Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                $path = $_.Path
+                if ($path) {
+                    [void]$dirs.Add(([System.IO.Path]::GetDirectoryName($path)).ToLower())
+                }
+            } catch {}
+        }
+    } catch {}
+    return $dirs
+}
+
+function Scan-TempFiles {
+    $paths = @($env:TEMP, "$env:SystemRoot\Temp", "$env:SystemRoot\Prefetch") |
+             Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+    $size = 0
+    foreach ($p in $paths) { $size += Get-FolderSize $p }
+    return @{ Key='temp'; Name='系统/用户临时文件'; Size=$size; Paths=$paths; Risk='低'; Mode='content'; Detail='%TEMP%, Windows\Temp, Prefetch'; Checked=$true }
+}
+
+function Scan-RecycleBin {
+    $size = 0
+    try {
+        $shell = New-Object -ComObject Shell.Application
+        $rb = $shell.NameSpace(0x0a)
+        if ($rb) { foreach ($item in $rb.Items()) { try { $size += $item.Size } catch {} } }
+    } catch {}
+    return @{ Key='recyclebin'; Name='回收站'; Size=$size; Paths=@(); Risk='低'; Mode='recyclebin'; Detail='清空所有磁盘的回收站'; Checked=$true }
+}
+
+function Scan-BrowserCache {
+    $cachePaths = @(
+        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Cache",
+        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Cache",
+        "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Code Cache",
+        "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Code Cache"
+    )
+    $ffRoot = "$env:LOCALAPPDATA\Mozilla\Firefox\Profiles"
+    if (Test-Path -LiteralPath $ffRoot) {
+        Get-ChildItem -LiteralPath $ffRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            $cachePaths += (Join-Path $_.FullName 'cache2')
+        }
+    }
+    $paths = $cachePaths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -Unique
+    $size = 0
+    foreach ($p in $paths) { $size += Get-FolderSize $p }
+    return @{ Key='browser'; Name='浏览器缓存(Chrome/Edge/Firefox)'; Size=$size; Paths=$paths; Risk='低'; Mode='content'; Detail='仅清缓存, 不动密码/书签/历史'; Checked=$true }
+}
+
+function Scan-WindowsUpdate {
+    $paths = @("$env:SystemRoot\SoftwareDistribution\Download", "$env:SystemRoot\Logs\CBS") |
+             Where-Object { Test-Path -LiteralPath $_ }
+    $size = 0
+    foreach ($p in $paths) { $size += Get-FolderSize $p }
+    return @{ Key='winupdate'; Name='Windows更新缓存/日志'; Size=$size; Paths=$paths; Risk='中'; Mode='content'; Detail='更新下载缓存与CBS日志(默认不勾选)'; Checked=$false }
+}
+
+function Scan-BigLogs {
+    param([double]$ThresholdMB = 50)
+    $threshold = $ThresholdMB * 1MB
+    $searchRoots = @(
+        "$env:LOCALAPPDATA",
+        "$env:APPDATA",
+        "$env:ProgramData",
+        "$env:SystemRoot\Logs"
+    ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -Unique
+    $bigFiles = @()
+    $size = 0
+    foreach ($root in $searchRoots) {
+        try {
+            Get-ChildItem -LiteralPath $root -Recurse -File -Include '*.log','*.etl','*.dmp' -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.Length -ge $threshold -and -not (Test-Protected $_.DirectoryName) } |
+            ForEach-Object {
+                $bigFiles += $_.FullName
+                $size += $_.Length
+            }
+        } catch {}
+    }
+    return @{ Key='biglogs'; Name="大日志文件(>$ThresholdMB MB)"; Size=$size; Paths=$bigFiles; Risk='中'; Mode='files'; Detail="$($bigFiles.Count) 个大日志/转储文件(默认不勾选)"; Checked=$false }
+}
+
+function Scan-Residual {
+    param([int]$Days = 90)
+    $cutoff = (Get-Date).AddDays(-$Days)
+    $running = Get-RunningProcessDirs
+    $found = @()
+    $totalSize = 0
+    foreach ($target in $Global:ResidualTargets) {
+        foreach ($root in $target.Roots) {
+            if (-not (Test-Path -LiteralPath $root)) { continue }
+            try {
+                $item = Get-Item -LiteralPath $root -Force -ErrorAction SilentlyContinue
+                if (-not $item) { continue }
+                $last = $item.LastWriteTime
+                if ($last -gt $cutoff) { continue }
+                if ($running.Contains($root.ToLower())) { continue }
+                $sz = Get-FolderSize $root
+                if ($sz -le 0) { continue }
+                $found += @{ Name=$target.Name; Path=$root; Size=$sz; LastWrite=$last }
+                $totalSize += $sz
+            } catch {}
+        }
+    }
+    $paths = $found | ForEach-Object { $_.Path }
+    $detailLines = $found | ForEach-Object { "  $($_.Name)  |  $(Format-Size $_.Size)  |  最后修改 $($_.LastWrite.ToString('yyyy-MM-dd'))  |  $($_.Path)" }
+    $detail = if ($found.Count -gt 0) { ($detailLines -join "`n") } else { '未发现疑似残留' }
+    return @{ Key='residual'; Name="应用残留(>$Days 天未用)"; Size=$totalSize; Paths=@($paths); Risk='高'; Mode='folder'; Detail=$detail; Checked=$false; Items=$found }
+}
+
+function Scan-BigFolders {
+    $roots = @("C:\", "C:\Users") | Select-Object -Unique
+    $results = @()
+    foreach ($root in $roots) {
+        try {
+            Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue |
+            Where-Object { -not (Test-Protected $_.FullName) } |
+            ForEach-Object {
+                $sz = Get-FolderSize $_.FullName
+                if ($sz -gt 0) {
+                    $results += @{ Path=$_.FullName; Size=$sz }
+                }
+            }
+        } catch {}
+    }
+    return @($results | Sort-Object Size -Descending | Select-Object -First 10)
+}
+'@
+
+# 全局后台任务状态
+$Global:PendingTasks  = @{}       # 正在执行的后台任务 (键 → @{ PS; Handle; Desc })
+$Global:TotalFreeable = 0
+
+# ============================================================
 #  删除执行 (分级: 低风险永久删, 高风险移回收站)
 #  返回: @{ Freed; Deleted(数组); Skipped(数组) }
 # ============================================================
@@ -320,8 +526,10 @@ function Move-ToRecycleBin {
             <Setter Property="Padding" Value="4,6"/>
             <!-- 禁用默认焦点矩形(蓝白虚框) -->
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <!-- 关键: 让 GridViewRowPresenter 继承 Foreground -->
-            <Setter Property="TextElement.Foreground" Value="White"/>
+            <!-- 关键: GridViewRowPresenter 是 GridView 必须的渲染器 -->
+            <!-- 如果写成 ContentPresenter，WPF 忽略所有列绑定，回退到 ToString() -->
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
@@ -331,9 +539,10 @@ function Move-ToRecycleBin {
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Left"
-                                              VerticalAlignment="Center"
-                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            <GridViewRowPresenter
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <!-- 鼠标悬停: 浅灰蓝背景 -->
@@ -414,9 +623,9 @@ function Move-ToRecycleBin {
         <!-- 工具栏 -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,8">
             <Button x:Name="BtnScan" Content="开始扫描" Width="110" Height="34" Margin="0,0,8,0"
-                    Background="#FF4EA1FF" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                    Background="#FF4EA1FF" Foreground="White" BorderThickness="1" BorderBrush="#FF77BBFF" Cursor="Hand"/>
             <Button x:Name="BtnBigFolder" Content="扫描大文件夹Top10" Width="160" Height="34" Margin="0,0,8,0"
-                    Background="#FF6C5CE7" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                    Background="#FF6C5CE7" Foreground="White" BorderThickness="1" BorderBrush="#FF9988FF" Cursor="Hand"/>
             <TextBlock Text="残留阈值(天):" Foreground="#FFB0B0C0" VerticalAlignment="Center" Margin="6,0,4,0"/>
             <TextBox x:Name="TxtDays" Text="90" Width="50" Height="28" VerticalContentAlignment="Center"
                      Background="#FF2A2A3C" Foreground="White" BorderThickness="0"/>
@@ -434,7 +643,9 @@ function Move-ToRecycleBin {
                         <GridViewColumn Header="" Width="40">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate>
-                                    <CheckBox IsChecked="{Binding Checked}" HorizontalAlignment="Center"/>
+                                    <CheckBox IsChecked="{Binding Checked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Width="18" Height="18" Margin="2,0"/>
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
@@ -457,9 +668,9 @@ function Move-ToRecycleBin {
         <!-- 操作按钮 -->
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button x:Name="BtnSelectAll" Content="全选低风险" Width="110" Height="36" Margin="0,0,8,0"
-                    Background="#FF3A3A4C" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+                    Background="#FF55557A" Foreground="White" BorderThickness="1" BorderBrush="#FF7777AA" Cursor="Hand"/>
             <Button x:Name="BtnClean" Content="清理选中项" Width="140" Height="36"
-                    Background="#FF00B894" Foreground="White" BorderThickness="0" FontWeight="Bold" Cursor="Hand"/>
+                    Background="#FF00B894" Foreground="White" BorderThickness="1" BorderBrush="#FF33DDA0" FontWeight="Bold" Cursor="Hand"/>
         </StackPanel>
     </Grid>
 </Window>
@@ -501,14 +712,11 @@ function Set-Status {
         return
     }
     try {
-        # 使用 ScriptBlock 方式，参数通过闭包传递，避免委托参数不匹配
+        # 用闭包捕获 $Text，避免 [action] 无参委托传参不匹配
+        $captured = $Text
         $null = $window.Dispatcher.BeginInvoke(
             [Windows.Threading.DispatcherPriority]::Background,
-            [action]{
-                param($t)
-                if ($null -ne $StatusText) { $StatusText.Text = $t }
-            },
-            $Text
+            [action]{ if ($null -ne $StatusText) { $StatusText.Text = $captured } }
         )
     } catch {
         Write-Log "Set-Status 异常: $($_.Exception.Message)"
@@ -545,70 +753,108 @@ function Add-UIItem {
 Update-DiskInfo
 
 # ============================================================
-#  DoEvents 消息泵: 在同步循环中保持 UI 响应
-#  基于 DispatcherFrame + PushFrame, 每调用一次抽干一帧消息,
-#  让 WPF 有机会处理绘制/输入事件, 避免界面假死。
-# ============================================================
-function Invoke-DoEvents {
-    $frame = New-Object Windows.Threading.DispatcherFrame
-    $null = [Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
-        [Windows.Threading.DispatcherPriority]::Background,
-        [action]{ $frame.Continue = $false }
-    )
-    [Windows.Threading.Dispatcher]::PushFrame($frame)
-}
-
-# ============================================================
-#  扫描 (后台 Runspace, 避免卡UI)
+#  扫描 — 后台 Runspace 异步并行 (不卡 UI)
+#  启动 6 个后台任务, DispatcherTimer 轮询完成结果
 # ============================================================
 $Global:Busy = $false
 
 function Invoke-Scan {
     if ($Global:Busy) { return }
     $Global:Busy = $true
-    try {
-        $BtnScan.IsEnabled = $false; $BtnClean.IsEnabled = $false
-        $Global:UIItems.Clear(); $Global:ScanData.Clear()
-        $ProgBar.Value = 0
-        Set-Status "正在扫描, 请稍候 (大日志/残留扫描可能需要一些时间)..."
+    $BtnScan.IsEnabled = $false; $BtnClean.IsEnabled = $false; $BtnBigFolder.IsEnabled = $false
+    $Global:UIItems.Clear(); $Global:ScanData.Clear()
+    $Global:PendingTasks.Clear()
+    $Global:TotalFreeable = 0
+    $ProgBar.Value = 0
+    Set-Status "正在启动扫描任务..."
 
-        $days  = 90; [int]::TryParse($TxtDays.Text, [ref]$days)  | Out-Null
-        $logMB = 50; [int]::TryParse($TxtLogMB.Text, [ref]$logMB) | Out-Null
+    $days  = 90; [int]::TryParse($TxtDays.Text, [ref]$days)  | Out-Null
+    $logMB = 50; [int]::TryParse($TxtLogMB.Text, [ref]$logMB) | Out-Null
 
-        # 同步执行各扫描 (逐项更新, 给用户反馈)
-        $steps = @(
-            @{ T='临时文件';      F={ Scan-TempFiles } },
-            @{ T='回收站';        F={ Scan-RecycleBin } },
-            @{ T='浏览器缓存';    F={ Scan-BrowserCache } },
-            @{ T='Windows更新';   F={ Scan-WindowsUpdate } },
-            @{ T='大日志文件';    F={ Scan-BigLogs -ThresholdMB $logMB } },
-            @{ T='应用残留';      F={ Scan-Residual -Days $days } }
-        )
-        $totalFreeable = 0
-        $i = 0
-        foreach ($s in $steps) {
-            $i++
-            Set-Status "正在扫描: $($s.T) ... ($i/$($steps.Count))"
-            $ProgBar.Value = [math]::Round($i / $steps.Count * 100)
-            try {
-                $result = & $s.F
-                Add-UIItem $result
-                $totalFreeable += [double]$result.Size
-            } catch {
-                Set-Status "扫描 $($s.T) 出错(已跳过): $($_.Exception.Message)"
+    # 定义 6 个并行任务 (每个在自己的 PowerShell 实例中)
+    $taskDefs = @(
+        @{ Key='temp';      Desc='临时文件';      Script="Scan-TempFiles" }
+        @{ Key='recyclebin';Desc='回收站';        Script="Scan-RecycleBin" }
+        @{ Key='browser';   Desc='浏览器缓存';    Script="Scan-BrowserCache" }
+        @{ Key='winupdate'; Desc='Windows更新';   Script="Scan-WindowsUpdate" }
+        @{ Key='biglogs';   Desc='大日志文件';    Script="Scan-BigLogs -ThresholdMB $logMB" }
+        @{ Key='residual';  Desc='应用残留';      Script="Scan-Residual -Days $days" }
+    )
+
+    $Global:PendingTaskCount = $taskDefs.Count
+
+    foreach ($def in $taskDefs) {
+        # 每个任务创建独立的 Runspace（Runspace 一次只能跑一个 pipeline，必须独立）
+        $rs = [RunspaceFactory]::CreateRunspace()
+        $rs.Open()
+        # 加载 init 脚本到该 Runspace
+        $psInit = [PowerShell]::Create()
+        $psInit.Runspace = $rs
+        $null = $psInit.AddScript($initScript)
+        $null = $psInit.Invoke()
+        $psInit.Dispose()
+        # 启动任务
+        $ps = [PowerShell]::Create()
+        $ps.Runspace = $rs
+        $null = $ps.AddScript($def.Script)
+        $handle = $ps.BeginInvoke()
+        $Global:PendingTasks[$def.Key] = @{ PS=$ps; Handle=$handle; Desc=$def.Desc; Runspace=$rs }
+    }
+
+    Set-Status "正在后台扫描 ($($taskDefs.Count) 项并行)... 界面保持响应。"
+
+    # 创建并启动轮询计时器 (DispatcherTimer 回调在 UI 线程上执行)
+    if ($Global:PollTimer) { try { $Global:PollTimer.Stop() } catch {} }
+    $Global:PollTimer = New-Object Windows.Threading.DispatcherTimer
+    $Global:PollTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+    $Global:PollTimer.Add_Tick({
+        # 遍历所有任务, 处理已完成的
+        foreach ($key in @($Global:PendingTasks.Keys)) {
+            $task = $Global:PendingTasks[$key]
+            if (-not $task) { continue }
+            if ($task.Handle.IsCompleted) {
+                try {
+                    $result = $task.PS.EndInvoke($task.Handle)
+                    if ($result -and $result.Count -gt 0 -and $result[0]) {
+                        # 在主脚本添加 UI 项 (Timer 在 UI 线程, 直接调用)
+                        $obj = [pscustomobject]@{
+                            Key      = $result[0].Key
+                            Name     = $result[0].Name
+                            SizeText = Format-Size $result[0].Size
+                            Risk     = $result[0].Risk
+                            Detail   = ($result[0].Detail -split "`n")[0]
+                            Checked  = [bool]$result[0].Checked
+                        }
+                        $Global:ScanData[$result[0].Key] = $result[0]
+                        $Global:UIItems.Add($obj)
+                        $Global:TotalFreeable += [double]$result[0].Size
+                    }
+                } catch {
+                    Write-Log "后台任务 $key 取结果失败: $($_.Exception.Message)"
+                } finally {
+                    $task.PS.Dispose()
+                    try { $task.Runspace.Dispose() } catch {}
+                }
+                # 从 PendingTasks 移除 (允许重新扫描)
+                $null = $Global:PendingTasks.Remove($key)
             }
-            # 让UI刷新 (DoEvents 泵, 同步循环中保持界面响应)
-            Invoke-DoEvents
         }
 
-        Set-Status "扫描完成。共发现可释放约 $(Format-Size $totalFreeable)。请勾选后点击 [清理选中项]。"
-        $ProgBar.Value = 100
-    } catch {
-        Set-Status "扫描过程出现异常: $($_.Exception.Message)"
-    } finally {
-        $BtnScan.IsEnabled = $true; $BtnClean.IsEnabled = $true
-        $Global:Busy = $false
-    }
+        # 进度 — 只用全局变量 (避免 Invoke-Scan 返回后局部变量消失)
+        $completedCount = $Global:PendingTaskCount - $Global:PendingTasks.Count
+        $pct = if ($Global:PendingTaskCount -gt 0) { [math]::Min(99, [math]::Round($completedCount / $Global:PendingTaskCount * 100, 1)) } else { 0 }
+        $ProgBar.Value = $pct
+
+        # 全部完成?
+        if ($Global:PendingTasks.Count -eq 0 -and $Global:PendingTaskCount -gt 0) {
+            $Global:PollTimer.Stop()
+            Set-Status "扫描完成。共发现可释放约 $(Format-Size $Global:TotalFreeable)。请勾选后点击 [清理选中项]。"
+            $ProgBar.Value = 100
+            $BtnScan.IsEnabled = $true; $BtnClean.IsEnabled = $true; $BtnBigFolder.IsEnabled = $true
+            $Global:Busy = $false
+        }
+    })
+    $Global:PollTimer.Start()
 }
 
 # ============================================================
@@ -732,26 +978,59 @@ function Invoke-Clean {
 function Invoke-BigFolder {
     if ($Global:Busy) { return }
     $Global:Busy = $true
-    $BtnBigFolder.IsEnabled = $false
-    Set-Status "正在扫描 C盘 大文件夹 Top10 (可能需要一些时间)..."
-    # 触发UI消息泵，让界面刷新
-    $null = $window.Dispatcher.BeginInvoke([Windows.Threading.DispatcherPriority]::Background, [action]{})
-    try {
-        $top = Scan-BigFolders
-        $msg = "C盘占用空间最大的文件夹 Top10:`n`n"
-        $rank = 0
-        foreach ($t in $top) {
-            $rank++
-            $msg += ("{0,2}. {1,-10}  {2}`n" -f $rank, (Format-Size $t.Size), $t.Path)
+    $BtnScan.IsEnabled = $false; $BtnClean.IsEnabled = $false; $BtnBigFolder.IsEnabled = $false
+    Set-Status "正在后台扫描 C盘 大文件夹 Top10..."
+
+    # 创建独立的 Runspace（避免与扫描任务冲突）
+    $rs = [RunspaceFactory]::CreateRunspace()
+    $rs.Open()
+    # 加载 init 脚本
+    $psInit = [PowerShell]::Create()
+    $psInit.Runspace = $rs
+    $null = $psInit.AddScript($initScript)
+    $null = $psInit.Invoke()
+    $psInit.Dispose()
+
+    $ps = [PowerShell]::Create()
+    $ps.Runspace = $rs
+    $null = $ps.AddScript("Scan-BigFolders")
+    $handle = $ps.BeginInvoke()
+
+    # 单任务轮询计时器
+    if ($Global:BigFolderTimer) { try { $Global:BigFolderTimer.Stop() } catch {} }
+    $Global:BigFolderTimer = New-Object Windows.Threading.DispatcherTimer
+    $Global:BigFolderTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+    $Global:BigFolderTimer.Add_Tick({
+        if ($handle.IsCompleted) {
+            $Global:BigFolderTimer.Stop()
+            try {
+                $result = $ps.EndInvoke($handle)
+                if ($result -and $result.Count -gt 0) {
+                    $top = $result[0]
+                    $msg = "C盘占用空间最大的文件夹 Top10:`n`n"
+                    $rank = 0
+                    foreach ($t in $top) {
+                        $rank++
+                        $msg += ("{0,2}. {1,-10}  {2}`n" -f $rank, (Format-Size $t.Size), $t.Path)
+                    }
+                    $msg += "`n提示: 此为只读分析, 请自行判断后手动处理。"
+                    [System.Windows.MessageBox]::Show($msg, "大文件夹 Top10", 'OK', 'Information') | Out-Null
+                    Set-Status "大文件夹扫描完成。"
+                } else {
+                    Set-Status "大文件夹扫描结果为空。"
+                }
+            } catch {
+                Set-Status "大文件夹扫描出错: $($_.Exception.Message)"
+                Write-Log "BigFolder 后台任务异常: $($_.Exception.Message)"
+            } finally {
+                $ps.Dispose()
+                try { $rs.Dispose() } catch {}
+            }
+            $BtnScan.IsEnabled = $true; $BtnClean.IsEnabled = $true; $BtnBigFolder.IsEnabled = $true
+            $Global:Busy = $false
         }
-        $msg += "`n提示: 此为只读分析, 请自行判断后手动处理。"
-        [System.Windows.MessageBox]::Show($msg, "大文件夹 Top10", 'OK', 'Information') | Out-Null
-        Set-Status "大文件夹扫描完成。"
-    } catch {
-        Set-Status "大文件夹扫描出错: $($_.Exception.Message)"
-    }
-    $BtnBigFolder.IsEnabled = $true
-    $Global:Busy = $false
+    })
+    $Global:BigFolderTimer.Start()
 }
 
 # ============================================================
@@ -767,26 +1046,30 @@ $BtnSelectAll.Add_Click({
     $ItemList.Items.Refresh()
 })
 
+# CheckBox 点击兜底：PSObject 的 WPF 双向绑定时有不生效，
+# 在 ListView 级别捕获 CheckBox Click，同步数据到控件视觉状态
+$ItemList.AddHandler([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent, [System.Windows.RoutedEventHandler]{
+    param($sender, $e)
+    $cb = $e.OriginalSource
+    if ($cb -is [System.Windows.Controls.Primitives.ToggleButton]) {
+        $item = $cb.DataContext
+        if ($item -and $null -ne $item.Checked) {
+            $item.Checked = ($cb.IsChecked -eq $true)
+        }
+    }
+})
+
 # 需要 WinForms 的 DoEvents/MessageBox 兜底
 try { Add-Type -AssemblyName System.Windows.Forms } catch {}
 
-# 启动时自动扫描一次
-# 注意: 绝不能把 PowerShell 脚本块丢到裸 .NET 线程(ThreadPool/new Thread)上执行 —
-# 那种线程没有 DefaultRunspace, cmdlet 一执行就抛 "no Runspace available" 且异常在
-# try/catch 之外, 会直接终结进程 => 窗口闪退。这里改为在 UI 线程上调用同步版 Invoke-Scan
-# (其内部用 Invoke-DoEvents 泵消息, 保持界面响应不假死)。
+# 窗口渲染完成后自动扫描一次 (异步后台, 不卡 UI)
 $window.Add_ContentRendered({
-    # 用 ApplicationIdle 优先级延后到窗口完全渲染后再扫, 并整体 try/catch 兜底
-    $null = $window.Dispatcher.BeginInvoke(
-        [Windows.Threading.DispatcherPriority]::ApplicationIdle,
-        [action]{
-            try {
-                Invoke-Scan
-            } catch {
-                Write-Log "自动扫描异常: $($_.Exception.Message)"
-                Set-Status "扫描出错: $($_.Exception.Message) (日志见: $Global:LogFile)"
-            }
-        })
+    try {
+        Invoke-Scan
+    } catch {
+        Write-Log "自动扫描异常: $($_.Exception.Message)"
+        Set-Status "扫描出错: $($_.Exception.Message) (日志见: $Global:LogFile)"
+    }
 })
 
 # ---------- 全局兜底: UI 线程未捕获异常 ----------
@@ -802,6 +1085,20 @@ try {
         $e.Handled = $true
     })
 } catch { Write-Log "注册全局异常handler失败: $($_.Exception.Message)" }
+
+# 窗口关闭时清理后台资源
+$window.Add_Closed({
+    try {
+        if ($Global:PollTimer) { $Global:PollTimer.Stop() }
+        if ($Global:BigFolderTimer) { $Global:BigFolderTimer.Stop() }
+        # Dispose 所有未完成的后台任务 (含 Runspace)
+        foreach ($entry in $Global:PendingTasks.Values) {
+            try { $entry.PS.Dispose() } catch {}
+            try { $entry.Runspace.Dispose() } catch {}
+        }
+        $Global:PendingTasks.Clear()
+    } catch { Write-Log "窗口关闭清理异常: $($_.Exception.Message)" }
+})
 
 # 显示窗口
 try {

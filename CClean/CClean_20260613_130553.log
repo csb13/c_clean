@@ -1,0 +1,20 @@
+[13:05:55] UI未捕获异常: 参数计数不匹配。
+   在 System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   在 System.Delegate.DynamicInvokeImpl(Object[] args)
+   在 System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   在 System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:05:55] UI未捕获异常: 参数计数不匹配。
+   在 System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   在 System.Delegate.DynamicInvokeImpl(Object[] args)
+   在 System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   在 System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
+[13:05:55] 后台任务 biglogs 取结果失败: 使用“1”个参数调用“EndInvoke”时发生异常:“未运行管道，因为已运行某个管道。不能并行运行多个管道。”
+[13:05:55] 后台任务 browser 取结果失败: 使用“1”个参数调用“EndInvoke”时发生异常:“未运行管道，因为已运行某个管道。不能并行运行多个管道。”
+[13:05:55] 后台任务 residual 取结果失败: 使用“1”个参数调用“EndInvoke”时发生异常:“未运行管道，因为已运行某个管道。不能并行运行多个管道。”
+[13:05:55] 后台任务 winupdate 取结果失败: 使用“1”个参数调用“EndInvoke”时发生异常:“未运行管道，因为已运行某个管道。不能并行运行多个管道。”
+[13:05:55] 后台任务 recyclebin 取结果失败: 使用“1”个参数调用“EndInvoke”时发生异常:“未运行管道，因为已运行某个管道。不能并行运行多个管道。”
+[13:05:55] UI未捕获异常: 参数计数不匹配。
+   在 System.Reflection.RuntimeMethodInfo.InvokeArgumentsCheck(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+   在 System.Delegate.DynamicInvokeImpl(Object[] args)
+   在 System.Windows.Threading.ExceptionWrapper.InternalRealCall(Delegate callback, Object args, Int32 numArgs)
+   在 System.Windows.Threading.ExceptionWrapper.TryCatchWhen(Object source, Delegate callback, Object args, Int32 numArgs, Delegate catchHandler)
